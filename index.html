@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Flag Arena 200+ Flags Pro</title>
+<style>
+body {
+  margin:0;
+  background: radial-gradient(circle,#001a33,#000);
+  font-family:'Arial Black',sans-serif;
+  color:white;
+  overflow:hidden;
+}
+#stage { position:relative; width:100vw; height:100vh; perspective:1000px; }
+#ring {
+  position:absolute;
+  top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  width:400px; height:400px;
+  border-radius:50%;
+  border:12px solid #39ff14;
+  border-left-color:transparent;
+  box-shadow:0 0 30px rgba(57,255,20,0.8);
+  transition: box-shadow 0.5s ease-in-out;
+}
+.flag {
+  position:absolute;
+  width:30px; height:30px;
+  border-radius:50%;
+  border:2px solid white;
+  background-size:cover;
+  background-position:center;
+  will-change: transform, filter;
+  filter: drop-shadow(0 0 3px #39ff14);
+}
+#wheel {
+  position:absolute;
+  width:200px; height:200px;
+  border-radius:50%;
+  border:6px solid gold;
+  background:#111;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size:28px;
+  color:white;
+  top:50%; left:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  text-transform:uppercase;
+}
+#status { position:absolute; top:20px; width:100%; text-align:center; font-size:20px; color:#39ff14; text-shadow:0 0 8px #000; }
+#leaderboard { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); background:rgba(0,0,0,0.5); padding:10px 15px; border-radius:12px; font-size:16px; }
+#chat { position:absolute; right:20px; top:60px; width:180px; height:400px; display:flex; flex-direction:column-reverse; overflow:hidden; }
+.chat-msg { background:rgba(0,0,0,0.5); padding:3px 6px; margin-top:2px; border-radius:6px; font-size:12px; white-space:nowrap; color:#39ff14; }
+.particle { position:absolute; width:8px; height:8px; border-radius:50%; background:#39ff14; pointer-events:none; opacity:0.8; will-change: transform, opacity; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="ring"></div>
+  <div id="wheel">?</div>
+  <div id="status">Starting Arena...</div>
+  <div id="leaderboard"><b>Top Winners:</b><div id="scores"></div></div>
+  <div id="chat"></div>
+</div>
+
+<script>
+// --- Config ---
+const countries=[
+"af","al","dz","ad","ao","ag","ar","am","au","at","az","bs","bh","bd","bb","by","be","bz","bj","bt","bo","ba","bw","br","bn","bg","bf","bi","kh","cm","ca","cv","cf","td","cl","cn","co","km","cg","cd","cr","ci","hr","cu","cy","cz","dk","dj","dm","do","ec","eg","sv","gq","er","ee","et","fj","fi","fr","ga","gm","ge","de","gh","gr","gd","gt","gn","gw","gy","ht","hn","hu","is","in","id","ir","iq","ie","il","it","jm","jp","jo","kz","ke","ki","kp","kr","kw","kg","la","lv","lb","ls","lr","ly","li","lt","lu","mk","mg","mw","my","mv","ml","mt","mh","mr","mu","mx","fm","md","mc","mn","me","ma","mz","mm","na","nr","np","nl","nz","ni","ne","ng","no","om","pk","pw","pa","pg","py","pe","ph","pl","pt","qa","ro","ru","rw","kn","lc","vc","ws","sm","st","sa","sn","rs","sc","sl","sg","sk","si","sb","so","za","es","lk","sd","sr","sz","se","ch","sy","tj","tz","th","tl","tg","to","tt","tn","tr","tm","tv","ug","ua","ae","gb","us","uy","uz","vu","ve","vn","ye","zm","zw"
+];
+const FLAG_COUNT = 200;
+const ARENA_RADIUS = 200;
+const ROUND_DURATION = 15000;
+const GAP_DEG = 30;
+
+// --- State ---
+let flags=[], scores={}, rotation=0, startTime=Date.now();
+const stage=document.getElementById("stage");
+const status=document.getElementById("status");
+const wheel=document.getElementById("wheel");
+const scoreBox=document.getElementById("scores");
+const chatBox=document.getElementById("chat");
+let particles=[];
+
+// --- Utils ---
+function shuffle(arr){return arr.sort(()=>0.5-Math.random());}
+function random(min,max){return min+Math.random()*(max-min);}
+function speak(text){let msg=new SpeechSynthesisUtterance(text);speechSynthesis.cancel();speechSynthesis.speak(msg);}
+function createParticle(x,y){let p=document.createElement("div");p.className="particle";stage.appendChild(p);particles.push({el:p,x,y,vx:random(-2,2),vy:random(-2,-6),life:50});}
+
+// --- Fake Chat ---
+const fakeMessages=["Brazil is winning!","Go Japan!","USA leads!","Germany strong!","France rocks!","India hype!","China dominates!","Uganda cheers!","South Africa amazing!","Russia unstoppable!"];
+function addFakeChat(){const msg=document.createElement("div");msg.className="chat-msg";msg.innerText=fakeMessages[Math.floor(Math.random()*fakeMessages.length)];chatBox.appendChild(msg);if(chatBox.childNodes.length>20) chatBox.removeChild(chatBox.firstChild);setTimeout(addFakeChat,1500+Math.random()*2000);}
+addFakeChat();
+
+// --- Spin Wheel ---
+let featured=null;
+function spinWheel(){
+  let spins=25;
+  wheel.style.display="flex";
+  let interval=setInterval(()=>{
+    featured=countries[Math.floor(Math.random()*countries.length)];
+    wheel.innerText=featured.toUpperCase();
+    spins--;
+    if(spins<=0){
+      clearInterval(interval);
+      status.innerText="Featured: "+featured.toUpperCase();
+      setTimeout(()=>{wheel.style.display="none"; spawnFlags();},1500);
+    }
+  },100);
+}
+
+// --- Spawn Flags ---
+function spawnFlags(){
+  flags.forEach(f=>f.el.remove());
+  flags=[];
+  const cx=stage.clientWidth/2;
+  const cy=stage.clientHeight/2;
+  let shuffled=shuffle(countries.slice());
+  for(let i=0;i<FLAG_COUNT;i++){
+    let code=shuffled[i%shuffled.length];
+    let el=document.createElement("div");
+    el.className="flag";
+    el.style.backgroundImage=`url('https://hatscripts.github.io/circle-flags/flags/${code}.svg')`;
+    stage.appendChild(el);
+    flags.push({el,code,x:cx,y:cy,vx:random(-8,8),vy:random(-8,8),alive:true,rotation:random(0,360),rotSpeed:random(-4,4),scale:random(0.9,1.1)});
+  }
+  startTime=Date.now();
+}
+
+// --- Update Loop ---
+function update(){
+  rotation+=3;
+  const ring=document.getElementById("ring");
+  ring.style.transform=`translate(-50%,-50%) rotate(${rotation}deg)`;
+  ring.style.boxShadow=`0 0 30px rgba(57,255,20,${0.6+0.2*Math.sin(Date.now()/200)})`;
+
+  const cx=stage.clientWidth/2;
+  const cy=stage.clientHeight/2;
+
+  // Update flags
+  flags.forEach(f=>{
+    if(!f.alive) return;
+    f.x+=f.vx; f.y+=f.vy; f.rotation+=f.rotSpeed;
+    const dx=f.x-cx, dy=f.y-cy, dist=Math.sqrt(dx*dx+dy*dy);
+    if(dist>ARENA_RADIUS){
+      let angle=Math.atan2(dy,dx)*180/Math.PI;if(angle<0)angle+=360;
+      let gapStart=(rotation+180-GAP_DEG/2)%360;
+      let gapEnd=(rotation+180+GAP_DEG/2)%360;
+      if((gapStart<gapEnd && angle>gapStart && angle<gapEnd) || (gapStart>gapEnd && (angle>gapStart || angle<gapEnd))){
+        f.alive=false;
+        createParticle(f.x,f.y);
+      } else { f.vx*=-0.8; f.vy*=-0.8; }
+    }
+    f.el.style.transform=`translate(${f.x}px,${f.y}px) rotate(${f.rotation}deg) scale(${f.scale})`;
+  });
+
+  // Update particles
+  particles.forEach((p,i)=>{p.x+=p.vx;p.y+=p.vy;p.life--;p.el.style.transform=`translate(${p.x}px,${p.y}px)`;p.el.style.opacity=p.life/50;if(p.life<=0){p.el.remove();particles.splice(i,1);}});
+
+  if(Date.now()-startTime>ROUND_DURATION){endRound();}
+  requestAnimationFrame(update);
+}
+
+// --- End Round ---
+function endRound(){
+  let alive=flags.filter(f=>f.alive);
+  if(alive.length===0) alive=flags;
+  let winner=alive[Math.floor(Math.random()*alive.length)];
+  scores[winner.code]=(scores[winner.code]||0)+1;
+  updateLeaderboard();
+  status.innerText=`🏆 Winner: ${winner.code} 🏆`;
+  speak(`Comment your country below. The winner is ${winner.code}. Won by Arena Luck.`);
+  setTimeout(spinWheel,4000);
+}
+
+// --- Leaderboard ---
+function updateLeaderboard(){
+  scoreBox.innerHTML="";
+  let arr=Object.entries(scores).sort((a,b)=>b[1]-a[1]).slice(0,5);
+  arr.forEach(([c,s])=>{let d=document.createElement("div");d.innerText=`${c} — ${s}`;scoreBox.appendChild(d);});
+}
+
+// --- Start Arena ---
+spinWheel();
+update();
+</script>
+</body>
+</html>
